@@ -80,3 +80,48 @@ func TestStoreBadFile(t *testing.T) {
 		t.Fatal("非法 JSON 文件应报错")
 	}
 }
+
+func TestStoreHas(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db.json")
+	st, _ := NewStore(path)
+	st.Set("x", "1")
+	if !st.Has("x") {
+		t.Fatal("Has 应返回 true")
+	}
+	if st.Has("y") {
+		t.Fatal("Has 对不存在的应返回 false")
+	}
+}
+
+func TestStoreUpdateMany(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db.json")
+	st, _ := NewStore(path)
+	if err := st.UpdateMany(map[string]string{"a": "1", "b": "2"}); err != nil {
+		t.Fatal(err)
+	}
+	// 重新打开确认持久化
+	st2, _ := NewStore(path)
+	if v, _ := st2.Get("a"); v != "1" {
+		t.Fatalf("批量写入未持久化: %q", v)
+	}
+}
+
+func TestStoreExportImport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db.json")
+	st, _ := NewStore(path)
+	st.Set("a", "1")
+	st.Set("b", "2")
+	backup := st.Export()
+	if len(backup) != 2 {
+		t.Fatalf("导出数量不对: %#v", backup)
+	}
+	// 清空再导入回去
+	st.Del("a")
+	st.Del("b")
+	if err := st.Import(backup); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.Get("a"); v != "1" {
+		t.Fatalf("导入后 a 不符: %q", v)
+	}
+}

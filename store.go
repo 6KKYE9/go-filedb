@@ -73,6 +73,47 @@ func (s *Store) Keys() []string {
 	return keys
 }
 
+// Has 判断某个键在不在
+func (s *Store) Has(key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.data[key]
+	return ok
+}
+
+// UpdateMany 批量写入一组键值，全部成功才返回
+// 中途任一写入失败则保留内存里已写的部分并返回错误
+func (s *Store) UpdateMany(pairs map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, v := range pairs {
+		s.data[k] = v
+	}
+	return s.save()
+}
+
+// Export 返回当前全部键值的一份拷贝，方便备份
+func (s *Store) Export() map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]string, len(s.data))
+	for k, v := range s.data {
+		out[k] = v
+	}
+	return out
+}
+
+// Import 用一份外部数据覆盖当前库（先清空再写入），用于恢复备份
+func (s *Store) Import(pairs map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data = make(map[string]string, len(pairs))
+	for k, v := range pairs {
+		s.data[k] = v
+	}
+	return s.save()
+}
+
 // save 必须在持锁状态下调用
 func (s *Store) save() error {
 	b, err := json.MarshalIndent(s.data, "", "  ")
