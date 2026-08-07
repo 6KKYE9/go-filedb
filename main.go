@@ -13,11 +13,13 @@ import (
 // 子命令：set / get / del / keys / has / update / export / import
 func main() {
 	dbPath := flag.String("db", "filedb.json", "库文件路径")
+	keyPrefix := flag.String("p", "", "keys 子命令用：只列出以这个前缀开头的键")
+	sep := flag.String("sep", "\n", "append 子命令用：往值后面追加时的连接符")
 	flag.Parse()
 
 	args := flag.Args()
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "子命令：set <k> <v> / get <k> / del <k> / keys / has <k> / update（从标准输入读 k=v）/ export / import <文件>")
+		fmt.Fprintln(os.Stderr, "子命令：set <k> <v> / get <k> / del <k> / keys / has <k> / update（从标准输入读 k=v）/ rename <旧> <新> / append <k> <内容> / clear / export / import <文件>")
 		os.Exit(2)
 	}
 
@@ -60,7 +62,8 @@ func main() {
 			fmt.Println("本来就没有")
 		}
 	case "keys":
-		for _, k := range st.Keys() {
+		// -p 给前缀就只列以它开头的键；不给就全列（KeysWithPrefix 对空前缀返回全部）
+		for _, k := range st.KeysWithPrefix(*keyPrefix) {
 			fmt.Println(k)
 		}
 	case "has":
@@ -74,6 +77,38 @@ func main() {
 			fmt.Println("没有")
 			os.Exit(1)
 		}
+	case "rename":
+		if len(args) < 3 {
+			fmt.Fprintln(os.Stderr, "rename 需要旧键和新键")
+			os.Exit(2)
+		}
+		ok, err := st.Rename(args[1], args[2])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "改名失败: %v\n", err)
+			os.Exit(1)
+		}
+		if ok {
+			fmt.Printf("已将 %s 改名为 %s\n", args[1], args[2])
+		} else {
+			fmt.Printf("（没有 %s）\n", args[1])
+			os.Exit(1)
+		}
+	case "append":
+		if len(args) < 3 {
+			fmt.Fprintln(os.Stderr, "append 需要 key 和内容")
+			os.Exit(2)
+		}
+		if err := st.Append(args[1], args[2], *sep); err != nil {
+			fmt.Fprintf(os.Stderr, "追加失败: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("ok")
+	case "clear":
+		if err := st.Clear(); err != nil {
+			fmt.Fprintf(os.Stderr, "清空失败: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("已清空")
 	case "update":
 		// 从标准输入读 k=v 一行一个，批量写入
 		pairs, perr := readPairs(os.Stdin)

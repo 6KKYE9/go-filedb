@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -114,6 +115,53 @@ func (s *Store) Import(pairs map[string]string) error {
 	return s.save()
 }
 
+// Rename 把旧键改成新键，新键已存在则覆盖；旧键不存在返回 false
+func (s *Store) Rename(oldKey, newKey string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data[oldKey]; !ok {
+		return false, nil
+	}
+	v := s.data[oldKey]
+	delete(s.data, oldKey)
+	s.data[newKey] = v
+	return true, s.save()
+}
+
+// Append 往某个键的值后面追加内容（用 sep 连接，sep 为空就直接拼）
+func (s *Store) Append(key, chunk, sep string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v, ok := s.data[key]; ok && v != "" {
+		s.data[key] = v + sep + chunk
+	} else {
+		s.data[key] = chunk
+	}
+	return s.save()
+}
+
+// Clear 清空整个库
+func (s *Store) Clear() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data = make(map[string]string)
+	return s.save()
+}
+
+// KeysWithPrefix 返回以 prefix 开头的键（按字母序）
+func (s *Store) KeysWithPrefix(prefix string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []string
+	for k := range s.data {
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // save 必须在持锁状态下调用
 func (s *Store) save() error {
 	b, err := json.MarshalIndent(s.data, "", "  ")
@@ -125,5 +173,7 @@ func (s *Store) save() error {
 	if err := os.WriteFile(tmp, b, 0644); err != nil {
 		return err
 	}
+	// Windows 上 os.Rename 不会覆盖已有文件
+	os.Remove(s.path)
 	return os.Rename(tmp, s.path)
 }

@@ -121,7 +121,85 @@ func TestStoreExportImport(t *testing.T) {
 	if err := st.Import(backup); err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := st.Get("a"); v != "1" {
+	if v, _ := requireGet(st, "a"); v != "1" {
 		t.Fatalf("导入后 a 不符: %q", v)
 	}
+}
+
+func TestStoreRename(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db.json")
+	st, _ := NewStore(path)
+	st.Set("old", "v")
+	ok, err := st.Rename("old", "new")
+	if err != nil || !ok {
+		t.Fatalf("rename 应成功: ok=%v err=%v", ok, err)
+	}
+	if v, ok := st.Get("new"); !ok || v != "v" {
+		t.Fatalf("改名后 new 应是 v，实际 %q %v", v, ok)
+	}
+	if _, ok := st.Get("old"); ok {
+		t.Fatal("old 应已不存在")
+	}
+	// 改名不存在的键应返回 false
+	if ok, _ := st.Rename("nope", "x"); ok {
+		t.Fatal("改名不存在的键应返回 false")
+	}
+}
+
+func TestStoreAppend(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db.json")
+	st, _ := NewStore(path)
+	st.Set("log", "第一行")
+	if err := st.Append("log", "第二行", "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.Get("log"); v != "第一行\n第二行" {
+		t.Fatalf("append 不符: %q", v)
+	}
+	// 给一个不存在的键追加，应该直接成为值
+	if err := st.Append("fresh", "x", ","); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.Get("fresh"); v != "x" {
+		t.Fatalf("追加到空键不符: %q", v)
+	}
+}
+
+func TestStoreClear(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db.json")
+	st, _ := NewStore(path)
+	st.Set("a", "1")
+	st.Set("b", "2")
+	if err := st.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Keys()) != 0 {
+		t.Fatalf("clear 后应无键，实际 %#v", st.Keys())
+	}
+	// clear 也该持久化：重开文件应为空
+	st2, _ := NewStore(path)
+	if len(st2.Keys()) != 0 {
+		t.Fatalf("clear 未持久化，重开仍有键: %#v", st2.Keys())
+	}
+}
+
+func TestStoreKeysWithPrefix(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db.json")
+	st, _ := NewStore(path)
+	st.Set("user:1", "a")
+	st.Set("user:2", "b")
+	st.Set("post:1", "c")
+	got := st.KeysWithPrefix("user:")
+	if len(got) != 2 || got[0] != "user:1" || got[1] != "user:2" {
+		t.Fatalf("前缀过滤不符: %#v", got)
+	}
+	// 空前缀返回全部
+	if got := st.KeysWithPrefix(""); len(got) != 3 {
+		t.Fatalf("空前缀应返回全部 3 个，实际 %d", len(got))
+	}
+}
+
+// requireGet 是测试里的取值辅助，避免重复写 bool 判断
+func requireGet(st *Store, k string) (string, bool) {
+	return st.Get(k)
 }
